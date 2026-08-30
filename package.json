@@ -1,0 +1,11 @@
+{
+  "name": "cat-help",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "scripts": {
+    "dev": "node scripts/dev-server.mjs",
+    "test": "node --test",
+    "check": "node scripts/validate-content.mjs && node --test"
+  }
+}

@@ -1,0 +1,91 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="theme-color" content="#f4a261" />
+    <meta name="description" content="CAT HELP：玩具球失踪事件——一款温暖的档案检索推理游戏" />
+    <title>CAT HELP：玩具球失踪事件</title>
+    <link rel="stylesheet" href="./src/ui/styles.css" />
+  </head>
+  <body>
+    <a class="skip-link" href="#main-content">跳到调查内容</a>
+    <div class="app-shell">
+      <header class="topbar">
+        <button class="brand" type="button" data-action="home" aria-label="返回调查首页">
+          <span class="brand-mark" aria-hidden="true">🐾</span>
+          <span><strong>CAT HELP</strong><small>桂花宅 · 家庭终端</small></span>
+        </button>
+        <div class="case-status"><span class="pulse"></span><span>失物调查进行中</span><b id="progress-text">0%</b></div>
+        <div class="top-actions">
+          <button type="button" class="icon-button" data-action="hint">提示 <kbd>H</kbd></button>
+          <button type="button" class="icon-button" data-action="tutorial" aria-label="打开教学中心">教学</button>
+          <button type="button" class="icon-button" data-action="settings" aria-label="打开设置">设置</button>
+        </div>
+      </header>
+
+      <aside class="sidebar" aria-label="调查导航">
+        <nav class="primary-nav">
+          <button class="nav-item active" data-view="inbox"><span>⌂</span>调查首页</button>
+          <button class="nav-item" data-view="records"><span>▤</span>记录库 <b id="unread-badge" class="badge">5</b></button>
+          <button class="nav-item" data-view="map"><span>⌘</span>宅邸地图</button>
+          <button class="nav-item" data-view="timeline"><span>◷</span>已知时间线</button>
+          <button class="nav-item" data-view="notes"><span>✦</span>调查笔记</button>
+        </nav>
+        <div class="case-card">
+          <div class="case-illustration" aria-hidden="true"><span class="cat-ears">▲　▲</span><span class="cat-face">● ᴥ ●</span></div>
+          <p class="eyebrow">CASE #001</p>
+          <h2>玩具球失踪事件</h2>
+          <div class="progress-track"><span id="progress-bar"></span></div>
+          <p id="case-stats">已读 0 / 42 条记录</p>
+          <button class="solve-button" type="button" data-action="solve">提交最终推理 <span>→</span></button>
+        </div>
+        <p class="save-status" id="save-status">● 进度已自动保存</p>
+      </aside>
+
+      <main id="main-content" class="workspace" tabindex="-1"></main>
+
+      <aside class="intel-panel" aria-label="调查动态">
+        <section>
+          <div class="section-heading"><h2>最近发现</h2><button data-view="notes">全部</button></div>
+          <div id="recent-concepts" class="chip-cloud"></div>
+        </section>
+        <section>
+          <div class="section-heading"><h2>事实进度</h2><span id="facts-count">0 / 5</span></div>
+          <ol id="facts-list" class="fact-list"></ol>
+        </section>
+        <section class="suggestion-card">
+          <span aria-hidden="true">💡</span>
+          <div><b>调查建议</b><p id="suggestion-text">先读桂花的委托，再从名字或地点开始检索。</p></div>
+        </section>
+      </aside>
+
+      <form id="command-form" class="command-dock" autocomplete="off">
+        <label for="command-input"><span class="prompt-mark">›</span><span class="sr-only">输入命令或关键词</span></label>
+        <input id="command-input" name="command" placeholder="输入关键词，例如“小酒”或“客厅”" list="concept-suggestions" />
+        <datalist id="concept-suggestions"></datalist>
+        <button type="submit">检索</button>
+        <p><kbd>/</kbd> 聚焦输入　<kbd>↑</kbd><kbd>↓</kbd> 历史　输入 <code>help</code> 查看命令</p>
+      </form>
+    </div>
+
+    <dialog id="modal" class="modal"><div id="modal-content"></div></dialog>
+    <div id="tutorial-layer" class="tutorial-layer" hidden>
+      <div class="tutorial-guard"></div>
+      <div id="tutorial-focus" class="tutorial-focus" aria-hidden="true"></div>
+      <section id="tutorial-card" class="tutorial-card" role="dialog" aria-modal="true" aria-labelledby="tutorial-title">
+        <p id="tutorial-progress" class="eyebrow-dark"></p>
+        <h2 id="tutorial-title"></h2>
+        <p id="tutorial-copy"></p>
+        <div class="tutorial-actions">
+          <button type="button" class="text-button" data-tutorial-skip>跳过本节</button>
+          <span></span>
+          <button type="button" class="secondary-button" data-tutorial-prev>上一步</button>
+          <button type="button" class="primary-button" data-tutorial-next>下一步</button>
+        </div>
+      </section>
+    </div>
+    <div id="toast-region" class="toast-region" aria-live="polite"></div>
+    <script type="module" src="./src/app.js"></script>
+  </body>
+</html>
