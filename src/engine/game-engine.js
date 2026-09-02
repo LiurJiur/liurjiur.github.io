@@ -8,6 +8,7 @@ export function createInitialState() {
     unlocked: [...START_IDS],
     read: [],
     discovered: [],
+    collected: [],
     searched: [],
     confirmedFacts: [],
     hints: {},
@@ -123,9 +124,10 @@ export function openRecord(state, id) {
 
 export function collectConcept(state, query) {
   const concept = resolveConcept(query);
-  if (!concept || state.discovered.includes(concept)) return { state, concept, collected: false };
+  if (!concept || state.collected.includes(concept)) return { state, concept, collected: false };
   const next = structuredClone(state);
-  next.discovered.push(concept);
+  if (!next.discovered.includes(concept)) next.discovered.push(concept);
+  next.collected.push(concept);
   return { state: next, concept, collected: true };
 }
 
@@ -135,6 +137,7 @@ export function search(state, query) {
   const next = structuredClone(state);
   if (!next.searched.includes(concept)) next.searched.push(concept);
   if (!next.discovered.includes(concept)) next.discovered.push(concept);
+  if (!next.collected.includes(concept)) next.collected.push(concept);
   const previous = new Set(next.unlocked);
   const computed = recompute(next);
   const results = records.filter((item) => computed.unlocked.includes(item.id) && item.concepts.some((entry) => entry === concept || normalize(entry).includes(normalize(concept))));
@@ -161,9 +164,13 @@ export function loadState(storage) {
     if (!parsed || parsed.version !== DATA_VERSION) return createInitialState();
     const initial = createInitialState();
     const parsedTutorial = parsed.tutorial && typeof parsed.tutorial === "object" ? parsed.tutorial : {};
+    const collected = Array.isArray(parsed.collected)
+      ? parsed.collected.filter((concept) => typeof concept === "string")
+      : (Array.isArray(parsed.searched) ? parsed.searched.filter((concept) => typeof concept === "string") : []);
     return recompute({
       ...initial,
       ...parsed,
+      collected,
       settings: { ...initial.settings, ...parsed.settings },
       tutorial: {
         automatic: typeof parsedTutorial.automatic === "boolean" ? parsedTutorial.automatic : initial.tutorial.automatic,

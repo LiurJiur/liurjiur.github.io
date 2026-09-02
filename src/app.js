@@ -1,5 +1,5 @@
 import { eventCards, facts, hintStages, locations, profiles, records, solution } from "./content/game-data.js";
-import { collectConcept, createInitialState, loadState, markTutorialSeen, normalize, openRecord, recompute, resetTutorialProgress, saveState, search, shouldShowTutorial, validateSolution } from "./engine/game-engine.js";
+import { collectConcept, createInitialState, loadState, markTutorialSeen, normalize, openRecord, recompute, resetTutorialProgress, resolveConcept, saveState, search, shouldShowTutorial, validateSolution } from "./engine/game-engine.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -14,6 +14,7 @@ let state = loadState(localStorage);
 let currentView = "inbox";
 let currentFilter = "全部";
 let historyIndex = state.history.length;
+let currentRecordId = null;
 const scrambledEvents = () => [eventCards[2], eventCards[0], eventCards[4], eventCards[1], eventCards[3]];
 let solveOrder = scrambledEvents();
 let tutorialSession = null;
@@ -22,7 +23,7 @@ let tutorialReturnFocus = null;
 
 const tutorials = {
   home: [
-    { selector: ".hero-actions .primary-button", title: "先读调查委托", copy: "从桂花的委托开始。打开记录后，系统会自动标记已读，并收集里面出现的调查概念。" },
+    { selector: ".hero-actions .primary-button", title: "先读调查委托", copy: "从桂花的委托开始。打开记录后，系统会自动标记已读，并展示其中可收集的调查概念。" },
     { selector: ".starter-grid", title: "选择调查方向", copy: "角色、地点和证词都能成为入口。点击卡片会收集概念；再次点击同一概念即可检索相关记录。" },
     { selector: "#command-form", title: "也可以直接输入", copy: "输入名字、地点、时间或物品进行检索。按 / 可快速聚焦输入框，↑↓ 可以翻阅命令历史。" },
   ],
@@ -75,6 +76,8 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&"
 const getRecord = (id) => records.find((item) => item.id === id);
 const unlockedRecords = () => records.filter((item) => state.unlocked.includes(item.id));
 const unreadRecords = () => state.unlocked.filter((id) => !state.read.includes(id) && id !== "SYS-00");
+const isConceptCollected = (concept) => state.collected.includes(resolveConcept(concept));
+const conceptStateClass = (concept) => isConceptCollected(concept) ? " collected" : "";
 
 function persist() {
   saveState(localStorage, state);
@@ -183,7 +186,7 @@ function formatBody(body) {
   return body.trim().split(/\n\n+/).map((paragraph) => {
     let output = escapeHtml(paragraph);
     output = output.replace(/\*\*(.+?)\*\*/g, "<strong>$1</strong>");
-    output = output.replace(/\[([^\]]+)\]/g, (_, concept) => `<button type="button" class="concept-link" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`);
+    output = output.replace(/\[([^\]]+)\]/g, (_, concept) => `<button type="button" class="concept-link${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`);
     output = output.replace(/\n/g, "<br>");
     return `<p>${output}</p>`;
   }).join("");
@@ -207,7 +210,7 @@ function updateChrome() {
     return `<li class="${done ? "done" : ""}"><i>${done ? "✓" : index + 1}</i><span><b>${done ? escapeHtml(fact.title) : "待确认事实"}</b>${done ? escapeHtml(fact.detail) : "继续交叉核对记录"}</span></li>`;
   }).join("");
   const concepts = state.discovered.slice(-12).reverse();
-  $("#recent-concepts").innerHTML = concepts.length ? concepts.map((concept) => `<button class="chip" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("") : "<small>阅读记录后，关键词会出现在这里。</small>";
+  $("#recent-concepts").innerHTML = concepts.length ? concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("") : "<small>阅读记录后，关键词会出现在这里。</small>";
   const hintStage = hintStages.find((stage) => !state.confirmedFacts.includes(stage.until));
   $("#suggestion-text").textContent = state.solved ? "事件已结案。红球平安回到了小酒身边。" : (hintStage?.hints[0] || "证据已经齐全，可以提交最终推理了。");
   $("#concept-suggestions").innerHTML = state.discovered.map((concept) => `<option value="${escapeHtml(concept)}"></option>`).join("");
@@ -282,27 +285,31 @@ function renderRecord(id) {
   setState(result.state);
   announceUnlocks(result.newIds);
   currentView = "record";
+  currentRecordId = id;
   $$(".nav-item").forEach((button) => button.classList.remove("active"));
   const item = result.opened;
+  const endingSupport = item.id === "END-01" ? donationPanel() : "";
   workspace.innerHTML = `<article class="document">
     <button class="back-button" data-view="records">← 返回记录库</button>
     <header class="document-head"><div class="document-meta"><span class="type-pill">${recordIcon(item.type)} ${escapeHtml(item.type)}</span><span>${item.id}</span></div><h1>${escapeHtml(item.title)}</h1></header>
     <div class="document-body">${formatBody(item.body)}</div>
-    <footer class="concept-strip"><b>本记录涉及的概念</b><div class="chip-cloud">${item.concepts.map((concept) => `<button class="chip" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div></footer>
+    ${endingSupport}
+    <footer class="concept-strip"><b>本记录涉及的概念 · 首次点击收集，再次点击检索</b><div class="chip-cloud">${item.concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div></footer>
   </article>`;
   workspace.scrollTop = 0;
   queueTutorial("record");
 }
 
 function performSearch(rawQuery) {
+  const sourceRecord = currentView === "record" ? getRecord(currentRecordId) : null;
   const result = search(state, rawQuery);
   setState(result.state);
   announceUnlocks(result.newIds);
   currentView = "search";
   $$(".nav-item").forEach((button) => button.classList.remove("active"));
   const query = result.concept || rawQuery;
-  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">SEARCH RESULT</p><h1>检索：${escapeHtml(query)}</h1></div><p>${result.concept ? `找到 ${result.results.length} 条当前有权查看的相关记录。` : "没有识别出这个概念。试试下方建议，或从已发现关键词继续。"}</p></div>
-    ${result.results.length ? `<div class="record-grid">${result.results.map((item) => `<button class="record-card ${state.read.includes(item.id) ? "" : "unread"}" data-open="${item.id}"><span class="record-icon">${recordIcon(item.type)}</span><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.type)}</small><code>${item.id}</code></span></button>`).join("")}</div>` : `<div class="empty-state"><span>⌕</span><p>${result.suggestions.length ? "你是不是想找：" : "先阅读已有记录，寻找新的名字、地点、物品或时间。"}</p><div class="chip-cloud" style="justify-content:center">${result.suggestions.map((item) => `<button class="chip" data-search="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join("")}</div></div>`}`;
+  workspace.innerHTML = `${sourceRecord ? `<button class="back-button" data-open="${sourceRecord.id}">← 返回《${escapeHtml(sourceRecord.title)}》</button>` : ""}<div class="page-head"><div><p class="eyebrow-dark">SEARCH RESULT</p><h1>检索：${escapeHtml(query)}</h1></div><p>${result.concept ? `找到 ${result.results.length} 条当前有权查看的相关记录。` : "没有识别出这个概念。试试下方建议，或从已发现关键词继续。"}</p></div>
+    ${result.results.length ? `<div class="record-grid">${result.results.map((item) => `<button class="record-card ${state.read.includes(item.id) ? "" : "unread"}" data-open="${item.id}"><span class="record-icon">${recordIcon(item.type)}</span><span><b>${escapeHtml(item.title)}</b><small>${escapeHtml(item.type)}</small><code>${item.id}</code></span></button>`).join("")}</div>` : `<div class="empty-state"><span>⌕</span><p>${result.suggestions.length ? "你是不是想找：" : "先阅读已有记录，寻找新的名字、地点、物品或时间。"}</p><div class="chip-cloud" style="justify-content:center">${result.suggestions.map((item) => `<button class="chip${conceptStateClass(item)}" data-search="${escapeHtml(item)}">${escapeHtml(item)}</button>`).join("")}</div></div>`}`;
   workspace.scrollTop = 0;
   queueTutorial("search");
 }
@@ -311,11 +318,14 @@ function handleConceptClick(rawConcept) {
   const result = collectConcept(state, rawConcept);
   if (!result.collected) return performSearch(rawConcept);
   setState(result.state);
+  $$('[data-search]', workspace).forEach((button) => {
+    if (resolveConcept(button.dataset.search) === result.concept) button.classList.add("collected");
+  });
   toast(`已收集概念：${result.concept}。再次点击即可检索。`);
 }
 
 function renderMap() {
-  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">GROUND FLOOR</p><h1>桂花宅一层</h1></div><p>房间可以点击检索。走廊连接了球失踪路线上的大部分地点。</p></div>
+  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">GROUND FLOOR</p><h1>桂花宅一层</h1></div><p>首次点击房间会收集地点，再次点击才检索。走廊连接了球失踪路线上的大部分地点。</p></div>
     <div class="map-wrap" aria-label="桂花宅房间示意图">${locations.map((place) => `<button class="room" data-search="${place.name}" style="left:${place.x}%;top:${place.y}%;width:${place.w}%;height:${place.h}%"><span><b>${place.name}</b><small>${place.note}</small></span></button>`).join("")}</div>`;
 }
 
@@ -327,10 +337,10 @@ function renderTimeline() {
 
 function renderNotes() {
   const visibleProfiles = profiles.filter((profile) => state.discovered.includes(profile.name));
-  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">INVESTIGATION NOTES</p><h1>调查笔记</h1></div><p>系统自动整理已经读到的角色和概念。点击关键词可再次检索。</p></div>
+  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">INVESTIGATION NOTES</p><h1>调查笔记</h1></div><p>系统自动整理已经读到的角色和概念。未收集的关键词会先完成收集，带勾关键词可直接检索。</p></div>
     <h2>角色档案</h2>
     ${visibleProfiles.length ? `<div class="profile-grid">${visibleProfiles.map((profile) => `<article class="profile-card"><span class="profile-avatar">${profile.icon}</span><span><h3>${profile.name}</h3><small>${profile.role}</small></span><p>${profile.detail}</p></article>`).join("")}</div>` : `<div class="empty-state">阅读家庭群聊后会出现角色档案。</div>`}
-    <h2 style="margin-top:32px">已发现概念</h2><div class="chip-cloud">${state.discovered.map((concept) => `<button class="chip" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div>`;
+    <h2 style="margin-top:32px">已发现概念</h2><div class="chip-cloud">${state.discovered.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div>`;
 }
 
 function showHint() {
@@ -350,7 +360,34 @@ function showHint() {
 
 function showHelp() {
   modalContent.innerHTML = `<div class="modal-inner"><div class="modal-head"><div><p class="eyebrow-dark">COMMAND GUIDE</p><h2>终端命令</h2></div><button class="close-button" data-close aria-label="关闭">×</button></div>
-    <div class="document-body"><p><strong>inbox</strong> 调查首页　<strong>list</strong> 已解锁记录　<strong>open ID</strong> 打开记录</p><p><strong>search 关键词</strong> 检索概念　<strong>profile 名字</strong> 查看角色　<strong>map</strong> 地图</p><p><strong>timeline</strong> 已确认时间线　<strong>notes</strong> 笔记　<strong>hint</strong> 提示　<strong>solve</strong> 最终推理</p><p>也可直接输入任何名字、地点、时间或物品。所有核心操作都能点击完成。</p></div></div>`;
+    <div class="document-body"><p><strong>inbox</strong> 调查首页　<strong>list</strong> 已解锁记录　<strong>open ID</strong> 打开记录</p><p><strong>search 关键词</strong> 检索概念　<strong>profile 名字</strong> 查看角色　<strong>map</strong> 地图</p><p><strong>timeline</strong> 已确认时间线　<strong>notes</strong> 笔记　<strong>hint</strong> 提示　<strong>solve</strong> 最终推理　<strong>打赏</strong> 支持作者</p><p>也可直接输入任何名字、地点、时间或物品。所有核心操作都能点击完成。</p></div></div>`;
+  modal.showModal();
+}
+
+function donationPanel() {
+  return `<section class="donation-panel" aria-labelledby="donation-title">
+    <p class="donation-kicker">觉得这个故事还不错？</p>
+    <h3 id="donation-title">请创作者喝杯奶茶</h3>
+    <p>感谢你的喜欢与支持。任选一种方式扫码即可，也可以点开图片后长按识别。</p>
+    <div class="donation-grid">
+      <figure class="donation-card wechat-pay">
+        <a href="./pics/1751788324695_.pic_hd.jpg" target="_blank" rel="noopener" aria-label="打开微信收款码大图">
+          <img src="./pics/1751788324695_.pic_hd.jpg" alt="微信收款码" loading="lazy">
+        </a>
+        <figcaption><b>微信支付</b><small>点击查看大图</small></figcaption>
+      </figure>
+      <figure class="donation-card alipay">
+        <a href="./pics/1761788324696_.pic_hd.jpg" target="_blank" rel="noopener" aria-label="打开支付宝收款码大图">
+          <img src="./pics/1761788324696_.pic_hd.jpg" alt="支付宝收款码" loading="lazy">
+        </a>
+        <figcaption><b>支付宝</b><small>点击查看大图</small></figcaption>
+      </figure>
+    </div>
+  </section>`;
+}
+
+function showDonate() {
+  modalContent.innerHTML = `<div class="modal-inner donation-modal"><div class="modal-head"><div><p class="eyebrow-dark">SUPPORT THE CREATOR</p><h2>打赏支持</h2></div><button class="close-button" data-close aria-label="关闭">×</button></div>${donationPanel()}<button class="secondary-button" data-close>暂时不用</button></div>`;
   modal.showModal();
 }
 
@@ -391,7 +428,7 @@ function renderEventOrder() {
 }
 
 function finishGame() {
-  modalContent.innerHTML = `<div class="modal-inner ending"><div class="ending-icon">🔔</div><p class="eyebrow-dark">CASE CLOSED</p><h2>球找到了！</h2><blockquote>“检测到可移动障碍物。”——小扫，在红球响起以后</blockquote><p>球安静地待在洗衣阳台的小扫后篮里。铁胆承认偷吃，小流儿公开宝物馆，小酒也坦白撞到了零食罐。</p><p>使用提示：${state.hintCount} 次　·　已读记录：${state.read.length} 条</p><button class="primary-button" data-close data-open="END-01">阅读完整结案记录</button></div>`;
+  modalContent.innerHTML = `<div class="modal-inner ending"><div class="ending-icon">🔔</div><p class="eyebrow-dark">CASE CLOSED</p><h2>球找到了！</h2><blockquote>“检测到可移动障碍物。”——小扫，在红球响起以后</blockquote><p>球安静地待在洗衣阳台的小扫后篮里。铁胆承认偷吃，小流儿公开宝物馆，小酒也坦白撞到了零食罐。</p><p>使用提示：${state.hintCount} 次　·　已读记录：${state.read.length} 条</p>${donationPanel()}<button class="primary-button" data-close data-open="END-01">阅读完整结案记录</button></div>`;
 }
 
 function handleCommand(raw) {
@@ -414,6 +451,7 @@ function handleCommand(raw) {
   if (["notes", "笔记"].includes(normalizedCommand)) return setView("notes");
   if (["hint", "提示"].includes(normalizedCommand)) return showHint();
   if (["solve", "推理", "结案"].includes(normalizedCommand)) return showSolve();
+  if (["donate", "support", "打赏", "赞助", "支持"].includes(normalizedCommand)) return showDonate();
   if (["open", "打开"].includes(normalizedCommand)) return renderRecord(argument.toUpperCase());
   if (["search", "搜索", "检索"].includes(normalizedCommand)) return performSearch(argument);
   if (["profile", "档案"].includes(normalizedCommand)) { setView("notes"); return; }
@@ -457,6 +495,7 @@ document.addEventListener("click", (event) => {
   if (target.dataset.close !== undefined) modal.close();
   if (target.dataset.action === "home") setView("inbox");
   if (target.dataset.action === "hint") showHint();
+  if (target.dataset.action === "donate") showDonate();
   if (target.dataset.action === "tutorial") showTutorialCenter();
   if (target.dataset.action === "settings") showSettings();
   if (target.dataset.action === "solve") showSolve();

@@ -25,6 +25,13 @@ test("old saves receive tutorial defaults", () => {
   assert.deepEqual(loaded.tutorial, { automatic: true, seen: [] });
 });
 
+test("old saves only treat previously searched concepts as collected", () => {
+  const oldSave = { ...createInitialState(), discovered: ["客厅", "小酒"], searched: ["客厅"] };
+  delete oldSave.collected;
+  const storage = { getItem: () => JSON.stringify(oldSave) };
+  assert.deepEqual(loadState(storage).collected, ["客厅"]);
+});
+
 test("invalid tutorial save fields are sanitized", () => {
   const saved = { ...createInitialState(), tutorial: { automatic: "yes", seen: ["home", null, 3] } };
   const storage = { getItem: () => JSON.stringify(saved) };
@@ -42,20 +49,23 @@ test("reading and searching unlock the客厅 branch", () => {
   state = openRecord(state, "REQ-01").state;
   const result = search(state, "客厅");
   assert.equal(result.concept, "客厅");
+  assert.ok(result.state.collected.includes("客厅"));
   assert.ok(result.state.unlocked.includes("REC-01"));
   assert.ok(result.state.unlocked.includes("TEST-02"));
 });
 
 test("collecting a concept does not count as searching it", () => {
-  const state = createInitialState();
-  const firstClick = collectConcept(state, "扫地机");
+  const state = openRecord(createInitialState(), "CHAT-01").state;
+  assert.ok(state.discovered.includes("小酒"));
+  assert.ok(!state.collected.includes("小酒"));
+  const firstClick = collectConcept(state, "小酒");
   assert.equal(firstClick.collected, true);
-  assert.equal(firstClick.concept, "小扫");
-  assert.ok(firstClick.state.discovered.includes("小扫"));
-  assert.ok(!firstClick.state.searched.includes("小扫"));
+  assert.equal(firstClick.concept, "小酒");
+  assert.ok(firstClick.state.collected.includes("小酒"));
+  assert.ok(!firstClick.state.searched.includes("小酒"));
   assert.deepEqual(firstClick.state.unlocked, state.unlocked);
 
-  const secondClick = collectConcept(firstClick.state, "小扫");
+  const secondClick = collectConcept(firstClick.state, "小酒");
   assert.equal(secondClick.collected, false);
   assert.equal(secondClick.state, firstClick.state);
 });
