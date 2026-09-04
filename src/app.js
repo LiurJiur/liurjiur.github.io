@@ -1,5 +1,7 @@
-import { eventCards, facts, hintStages, locations, profiles, records, solution } from "./content/game-data.js";
-import { collectConcept, createInitialState, loadState, markTutorialSeen, normalize, openRecord, recompute, resetTutorialProgress, resolveConcept, saveState, search, shouldShowTutorial, validateSolution } from "./engine/game-engine.js";
+import { caseCatalog, casesById, isCaseUnlocked } from "./content/case-catalog.js";
+import { createCaseEngine, normalize } from "./engine/game-engine.js";
+import { loadSave, resetCase, saveGame, SAVE_KEY } from "./engine/save-store.js";
+import { validateSolution } from "./engine/solution-engine.js";
 
 const $ = (selector, root = document) => root.querySelector(selector);
 const $$ = (selector, root = document) => [...root.querySelectorAll(selector)];
@@ -10,12 +12,31 @@ const commandInput = $("#command-input");
 const tutorialLayer = $("#tutorial-layer");
 const tutorialFocus = $("#tutorial-focus");
 const tutorialCard = $("#tutorial-card");
-let state = loadState(localStorage);
+const engines = new Map(caseCatalog.map((caseData) => [caseData.id, createCaseEngine(caseData)]));
+let save = loadSave(localStorage, engines);
+let caseData;
+let engine;
+let state;
+let records;
+let facts;
+let profiles;
+let locations;
+let hintStages;
+let eventCards;
+let solution;
+function bindCase(caseId) {
+  save.activeCaseId = caseId;
+  caseData = casesById.get(caseId);
+  engine = engines.get(caseId);
+  state = save.cases[caseId];
+  ({ records, facts, profiles, locations, hintStages, eventCards, solution } = caseData);
+}
+bindCase(save.activeCaseId);
 let currentView = "inbox";
 let currentFilter = "全部";
 let historyIndex = state.history.length;
 let currentRecordId = null;
-const scrambledEvents = () => [eventCards[2], eventCards[0], eventCards[4], eventCards[1], eventCards[3]];
+const scrambledEvents = () => [...eventCards.slice(2), ...eventCards.slice(0, 2)];
 let solveOrder = scrambledEvents();
 let tutorialSession = null;
 let tutorialTimer = null;
@@ -23,8 +44,8 @@ let tutorialReturnFocus = null;
 
 const tutorials = {
   home: [
-    { selector: ".hero-actions .primary-button", title: "先读调查委托", copy: "从桂花的委托开始。打开记录后，系统会自动标记已读，并展示其中可收集的调查概念。" },
-    { selector: ".starter-grid", title: "选择调查方向", copy: "角色、地点和证词都能成为入口。点击卡片会收集概念；再次点击同一概念即可检索相关记录。" },
+    { selector: ".hero-actions .primary-button", title: "先读调查委托", copy: "从本章委托开始。打开记录后，系统会自动标记已读，并展示其中可收集的调查概念。" },
+    { selector: ".starter-grid", title: "选择调查方向", copy: "角色、地点和证词都能成为入口。点击卡片会收集概念并解锁相关记录；再次点击同一概念即可检索。" },
     { selector: "#command-form", title: "也可以直接输入", copy: "输入名字、地点、时间或物品进行检索。按 / 可快速聚焦输入框，↑↓ 可以翻阅命令历史。" },
   ],
   records: [
@@ -32,15 +53,15 @@ const tutorials = {
     { selector: ".record-grid", title: "优先查看未读", copy: "带“未读”标记的卡片可能解锁新线索。点击任意卡片即可打开全文。" },
   ],
   record: [
-    { selector: ".document-body", title: "阅读并交叉核对", copy: "首次打开会自动记录阅读进度。正文中的高亮概念可以点击收集，再点一次便会检索。" },
-    { selector: ".concept-strip", title: "收集调查概念", copy: "文末汇总了本记录涉及的人物、地点、物品和时间。先收集，再检索，沿着线索继续追查。" },
+    { selector: ".document-body", title: "阅读并交叉核对", copy: "首次打开会自动记录阅读进度。正文中的高亮概念首次点击会收集并解锁记录，再点一次便会检索。" },
+    { selector: ".concept-strip", title: "收集调查概念", copy: "文末汇总了本记录涉及的人物、地点、物品和时间。首次点击收集并解锁，第二次点击检索，沿着线索继续追查。" },
   ],
   search: [
     { selector: ".page-head", title: "查看检索反馈", copy: "系统会把别名和近似说法归到标准概念；没有命中时，也会给出可尝试的相近词。" },
-    { selector: ".record-grid, .empty-state", title: "打开检索结果", copy: "这里只展示当前已解锁的相关记录。随着阅读和检索推进，同一个概念可能出现更多结果。" },
+    { selector: ".record-grid, .empty-state", title: "打开检索结果", copy: "这里只展示当前已解锁的相关记录。随着阅读和收集推进，同一个概念可能出现更多结果。" },
   ],
   map: [
-    { selector: ".map-wrap", title: "点击房间调查", copy: "地图上的每个房间都是可收集、可检索的地点概念。它也能帮助你理解球的移动路线。" },
+    { selector: ".map-wrap", title: "点击地点调查", copy: "地图上的地点都可以收集和检索，也能帮助你理解本章事件的移动路线。" },
   ],
   timeline: [
     { selector: ".timeline, .empty-state", title: "只看已确认事实", copy: "时间线只收录被多条证据互相印证的事实。空白时继续阅读证词、现场和设备日志即可。" },
@@ -76,11 +97,12 @@ const escapeHtml = (value) => String(value).replace(/[&<>"']/g, (char) => ({ "&"
 const getRecord = (id) => records.find((item) => item.id === id);
 const unlockedRecords = () => records.filter((item) => state.unlocked.includes(item.id));
 const unreadRecords = () => state.unlocked.filter((id) => !state.read.includes(id) && id !== "SYS-00");
-const isConceptCollected = (concept) => state.collected.includes(resolveConcept(concept));
+const isConceptCollected = (concept) => state.collected.includes(engine.resolveConcept(concept));
 const conceptStateClass = (concept) => isConceptCollected(concept) ? " collected" : "";
 
 function persist() {
-  saveState(localStorage, state);
+  save.cases[caseData.id] = state;
+  saveGame(localStorage, save);
   const status = $("#save-status");
   status.textContent = "● 进度已自动保存";
 }
@@ -91,11 +113,17 @@ function setState(next) {
   updateChrome();
 }
 
+const shouldShowTutorial = (topic) => save.preferences.tutorial.automatic && !save.preferences.tutorial.seen.includes(topic);
+function markTutorialSeen(topic) {
+  if (!save.preferences.tutorial.seen.includes(topic)) save.preferences.tutorial.seen.push(topic);
+  persist();
+}
+
 function finishTutorial(topic, message) {
   clearTimeout(tutorialTimer);
   tutorialLayer.hidden = true;
   tutorialSession = null;
-  if (!state.tutorial.seen.includes(topic)) setState(markTutorialSeen(state, topic));
+  if (!save.preferences.tutorial.seen.includes(topic)) markTutorialSeen(topic);
   if (message) toast(message);
   if (tutorialReturnFocus?.isConnected) tutorialReturnFocus.focus();
   tutorialReturnFocus = null;
@@ -113,7 +141,7 @@ function positionTutorial() {
     tutorialCard.style.transform = "translate(-50%, -50%)";
     return;
   }
-  target.scrollIntoView({ block: "nearest", behavior: state.settings.reducedMotion ? "auto" : "smooth" });
+  target.scrollIntoView({ block: "nearest", behavior: save.preferences.settings.reducedMotion ? "auto" : "smooth" });
   requestAnimationFrame(() => {
     if (!tutorialSession) return;
     const rect = target.getBoundingClientRect();
@@ -154,7 +182,7 @@ function renderTutorialStep() {
 }
 
 function startTutorial(topic, force = false) {
-  if (!tutorials[topic] || modal.open || (!force && !shouldShowTutorial(state, topic))) return;
+  if (!tutorials[topic] || modal.open || (!force && !shouldShowTutorial(topic))) return;
   tutorialReturnFocus = document.activeElement;
   tutorialSession = { topic, index: 0 };
   tutorialLayer.hidden = false;
@@ -167,17 +195,17 @@ function queueTutorial(topic) {
 }
 
 function inlineTutorial(topic, title, copy) {
-  if (!shouldShowTutorial(state, topic)) return "";
-  setState(markTutorialSeen(state, topic));
+  if (!shouldShowTutorial(topic)) return "";
+  markTutorialSeen(topic);
   return `<aside class="inline-tutorial"><span aria-hidden="true">✦</span><div><b>${escapeHtml(title)}</b><p>${escapeHtml(copy)}</p></div></aside>`;
 }
 
 function showTutorialCenter() {
-  const completed = state.tutorial.seen.length;
+  const completed = save.preferences.tutorial.seen.length;
   modalContent.innerHTML = `<div class="modal-inner"><div class="modal-head"><div><p class="eyebrow-dark">LEARNING CENTER</p><h2>操作教学</h2></div><button class="close-button" data-close aria-label="关闭">×</button></div>
     <p class="modal-intro">每项操作在第一次使用时都会主动讲解，也可以从这里随时重看。已学习 ${completed} / ${tutorialCatalog.length} 项。</p>
-    <div class="tutorial-list">${tutorialCatalog.map(([id, title, copy]) => `<article><span class="tutorial-status ${state.tutorial.seen.includes(id) ? "done" : ""}">${state.tutorial.seen.includes(id) ? "✓" : "·"}</span><span><b>${title}</b><small>${copy}</small></span><button type="button" class="secondary-button" data-tutorial-start="${id}">重看</button></article>`).join("")}</div>
-    <label class="setting-row"><span><b>自动显示首次教学</b><br><small>关闭后仍可从教学中心重看</small></span><input id="automatic-tutorial" type="checkbox" ${state.tutorial.automatic ? "checked" : ""}></label>
+    <div class="tutorial-list">${tutorialCatalog.map(([id, title, copy]) => `<article><span class="tutorial-status ${save.preferences.tutorial.seen.includes(id) ? "done" : ""}">${save.preferences.tutorial.seen.includes(id) ? "✓" : "·"}</span><span><b>${title}</b><small>${copy}</small></span><button type="button" class="secondary-button" data-tutorial-start="${id}">重看</button></article>`).join("")}</div>
+    <label class="setting-row"><span><b>自动显示首次教学</b><br><small>关闭后仍可从教学中心重看</small></span><input id="automatic-tutorial" type="checkbox" ${save.preferences.tutorial.automatic ? "checked" : ""}></label>
     <button type="button" class="secondary-button" data-action="reset-tutorial">重置教学进度</button></div>`;
   modal.showModal();
 }
@@ -202,6 +230,10 @@ function updateChrome() {
   $("#progress-text").textContent = `${progress}%`;
   $("#progress-bar").style.width = `${progress}%`;
   $("#case-stats").textContent = `已读 ${state.read.length} / ${records.length} 条记录`;
+  $("#case-number").textContent = `CASE #${caseData.number}`;
+  $("#case-title").textContent = caseData.title;
+  $("#case-status-copy").textContent = state.solved ? caseData.presentation.solvedCopy : caseData.presentation.activeCopy;
+  $("#terminal-name").textContent = `${caseData.title} · 家庭终端`;
   $("#unread-badge").textContent = unreadRecords().length;
   $("#unread-badge").hidden = unreadRecords().length === 0;
   $("#facts-count").textContent = `${confirmed.length} / ${facts.length}`;
@@ -212,10 +244,10 @@ function updateChrome() {
   const concepts = state.discovered.slice(-12).reverse();
   $("#recent-concepts").innerHTML = concepts.length ? concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("") : "<small>阅读记录后，关键词会出现在这里。</small>";
   const hintStage = hintStages.find((stage) => !state.confirmedFacts.includes(stage.until));
-  $("#suggestion-text").textContent = state.solved ? "事件已结案。红球平安回到了小酒身边。" : (hintStage?.hints[0] || "证据已经齐全，可以提交最终推理了。");
+  $("#suggestion-text").textContent = state.solved ? caseData.presentation.suggestionSolved : (hintStage?.hints[0] || "证据已经齐全，可以提交最终推理了。");
   $("#concept-suggestions").innerHTML = state.discovered.map((concept) => `<option value="${escapeHtml(concept)}"></option>`).join("");
-  document.documentElement.style.setProperty("--font-scale", state.settings.fontScale);
-  document.body.classList.toggle("reduce-motion", state.settings.reducedMotion);
+  document.documentElement.style.setProperty("--font-scale", save.preferences.settings.fontScale);
+  document.body.classList.toggle("reduce-motion", save.preferences.settings.reducedMotion);
 }
 
 function toast(message) {
@@ -247,23 +279,20 @@ function setView(view) {
 
 function renderHome() {
   const reqRead = state.read.includes("REQ-01");
+  const presentation = caseData.presentation;
   workspace.innerHTML = `
     <section class="hero">
       <div class="hero-content">
-        <p class="eyebrow-dark">桂花宅智能家庭终端 / CASE #001</p>
-        <h1>${state.solved ? "玩具球已经<em>找回</em>" : "一颗红球，<br>六段<em>不完整</em>的记忆"}</h1>
-        <p>${state.solved ? "每一只猫都推了小意外一爪，但没有真正的坏猫。你已经还原了红球从客厅到洗衣阳台的完整路线。" : "晚饭后，小酒最心爱的红色铃铛球不见了。检索聊天、证词和设备日志，找出它怎样穿过了半栋房子。这里没有危险，也没有真正的坏猫。"}</p>
+        <p class="eyebrow-dark">${presentation.homeEyebrow}</p>
+        <h1>${state.solved ? presentation.solvedTitle : presentation.homeTitle}</h1>
+        <p>${state.solved ? presentation.solvedBody : presentation.homeBody}</p>
         <div class="hero-actions">
-          <button class="primary-button" data-open="${state.solved ? "END-01" : "REQ-01"}">${state.solved ? "重温结案记录" : reqRead ? "继续调查" : "阅读桂花的委托"}</button>
+          <button class="primary-button" data-open="${state.solved ? "END-01" : "REQ-01"}">${state.solved ? "重温结案记录" : reqRead ? "继续调查" : "阅读调查委托"}</button>
           <button class="secondary-button" data-open="SYS-00">如何调查？</button>
         </div>
       </div>
     </section>
-    <div class="starter-grid" aria-label="推荐调查入口">
-      <button class="starter-card" data-search="小酒"><span>🐈‍⬛</span><span><b>从角色开始</b><small>问问最后玩球的小酒</small></span></button>
-      <button class="starter-card" data-search="客厅"><span>⌂</span><span><b>从现场开始</b><small>查看客厅留下的声音</small></span></button>
-      <button class="starter-card" data-open="CHAT-01"><span>◌</span><span><b>从证词开始</b><small>谁的话互相矛盾？</small></span></button>
-    </div>`;
+    <div class="starter-grid" aria-label="推荐调查入口">${presentation.starterCards.map((card) => `<button class="starter-card" ${card.search ? `data-search="${escapeHtml(card.search)}"` : `data-open="${card.open}"`}><span>${card.icon}</span><span><b>${card.title}</b><small>${card.copy}</small></span></button>`).join("")}</div>`;
 }
 
 function renderRecords() {
@@ -280,7 +309,7 @@ function renderRecords() {
 }
 
 function renderRecord(id) {
-  const result = openRecord(state, id);
+  const result = engine.openRecord(state, id);
   if (!result.opened) return toast("该记录尚未解锁。");
   setState(result.state);
   announceUnlocks(result.newIds);
@@ -294,7 +323,7 @@ function renderRecord(id) {
     <header class="document-head"><div class="document-meta"><span class="type-pill">${recordIcon(item.type)} ${escapeHtml(item.type)}</span><span>${item.id}</span></div><h1>${escapeHtml(item.title)}</h1></header>
     <div class="document-body">${formatBody(item.body)}</div>
     ${endingSupport}
-    <footer class="concept-strip"><b>本记录涉及的概念 · 首次点击收集，再次点击检索</b><div class="chip-cloud">${item.concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div></footer>
+    <footer class="concept-strip"><b>本记录涉及的概念 · 首次点击收集并解锁，再次点击检索</b><div class="chip-cloud">${item.concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div></footer>
   </article>`;
   workspace.scrollTop = 0;
   queueTutorial("record");
@@ -302,7 +331,7 @@ function renderRecord(id) {
 
 function performSearch(rawQuery) {
   const sourceRecord = currentView === "record" ? getRecord(currentRecordId) : null;
-  const result = search(state, rawQuery);
+  const result = engine.search(state, rawQuery);
   setState(result.state);
   announceUnlocks(result.newIds);
   currentView = "search";
@@ -315,18 +344,20 @@ function performSearch(rawQuery) {
 }
 
 function handleConceptClick(rawConcept) {
-  const result = collectConcept(state, rawConcept);
+  const result = engine.collectConcept(state, rawConcept);
   if (!result.collected) return performSearch(rawConcept);
   setState(result.state);
+  announceUnlocks(result.newIds);
   $$('[data-search]', workspace).forEach((button) => {
-    if (resolveConcept(button.dataset.search) === result.concept) button.classList.add("collected");
+    if (engine.resolveConcept(button.dataset.search) === result.concept) button.classList.add("collected");
   });
   toast(`已收集概念：${result.concept}。再次点击即可检索。`);
 }
 
 function renderMap() {
-  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">GROUND FLOOR</p><h1>桂花宅一层</h1></div><p>首次点击房间会收集地点，再次点击才检索。走廊连接了球失踪路线上的大部分地点。</p></div>
-    <div class="map-wrap" aria-label="桂花宅房间示意图">${locations.map((place) => `<button class="room" data-search="${place.name}" style="left:${place.x}%;top:${place.y}%;width:${place.w}%;height:${place.h}%"><span><b>${place.name}</b><small>${place.note}</small></span></button>`).join("")}</div>`;
+  const presentation = caseData.presentation;
+  workspace.innerHTML = `<div class="page-head"><div><p class="eyebrow-dark">${presentation.mapEyebrow}</p><h1>${presentation.mapTitle}</h1></div><p>${presentation.mapBody}</p></div>
+    <div class="map-wrap" aria-label="${presentation.mapTitle}示意图">${locations.map((place) => `<button class="room" data-search="${place.name}" style="left:${place.x}%;top:${place.y}%;width:${place.w}%;height:${place.h}%"><span><b>${place.name}</b><small>${place.note}</small></span></button>`).join("")}</div>`;
 }
 
 function renderTimeline() {
@@ -392,14 +423,26 @@ function showDonate() {
 }
 
 function showSettings() {
-  const lesson = inlineTutorial("settings", "按自己的习惯阅读", "字号和减少动画会立即生效。教学开关与重置入口在教学中心，清除存档则会重开整个案件。");
+  const lesson = inlineTutorial("settings", "按自己的习惯阅读", "字号和减少动画会立即生效。教学开关与重置入口在教学中心，也可以单独重开当前章节。");
   modalContent.innerHTML = `<div class="modal-inner"><div class="modal-head"><div><p class="eyebrow-dark">PREFERENCES</p><h2>终端设置</h2></div><button class="close-button" data-close aria-label="关闭">×</button></div>
     ${lesson}
     <label class="setting-row"><span><b>文字大小</b><br><small>立即应用到所有记录</small></span><select id="font-scale"><option value="0.9">较小</option><option value="1">标准</option><option value="1.12">较大</option><option value="1.25">特大</option></select></label>
-    <label class="setting-row"><span><b>减少动画</b><br><small>关闭移动与过渡效果</small></span><input id="reduce-motion" type="checkbox" ${state.settings.reducedMotion ? "checked" : ""}></label>
-    <button class="danger-button" data-action="reset">清除存档并重新开始</button></div>`;
+    <label class="setting-row"><span><b>减少动画</b><br><small>关闭移动与过渡效果</small></span><input id="reduce-motion" type="checkbox" ${save.preferences.settings.reducedMotion ? "checked" : ""}></label>
+    <div class="reset-actions"><button class="danger-button" data-action="reset-case">重新开始当前章节</button><button class="danger-button" data-action="reset-all">清除全部章节进度</button></div></div>`;
   modal.showModal();
-  $("#font-scale").value = String(state.settings.fontScale);
+  $("#font-scale").value = String(save.preferences.settings.fontScale);
+}
+
+function showCases() {
+  modalContent.innerHTML = `<div class="modal-inner"><div class="modal-head"><div><p class="eyebrow-dark">CASE ARCHIVE</p><h2>选择章节</h2></div><button class="close-button" data-close aria-label="关闭">×</button></div>
+    <p class="modal-intro">每章拥有独立的记录、检索与推理进度；字号和教学设置会跨章节保留。</p>
+    <div class="case-picker">${caseCatalog.map((item) => {
+      const unlocked = isCaseUnlocked(item, save.cases);
+      const progress = save.cases[item.id];
+      const status = !unlocked ? "尚未解锁" : progress.solved ? "已结案" : progress.read.length ? "调查中" : "新案件";
+      return `<button type="button" class="case-option ${item.id === caseData.id ? "active" : ""}" data-case="${item.id}" ${unlocked ? "" : "disabled"}><span><small>CASE #${item.number} · ${item.duration}</small><b>${item.title}</b><em>${item.subtitle}</em></span><strong>${status}</strong></button>`;
+    }).join("")}</div></div>`;
+  modal.showModal();
 }
 
 function showSolve() {
@@ -407,15 +450,15 @@ function showSolve() {
   if (state.solved) return renderRecord("END-01");
   solveOrder = scrambledEvents();
   const lesson = inlineTutorial("solve", "用全部证据完成复盘", "先选择每道题的答案，再用 ↑↓ 调整事件顺序。核心事实未集齐时可以预览题目，但不能提交。");
+  const questionHtml = solution.questions.map((question, index) => {
+    if (question.type === "order") return `<div class="question"><b>${index + 1}. ${question.prompt}</b><div id="event-order" class="event-order"></div></div>`;
+    if (question.type === "multiple") return `<div class="question"><b>${index + 1}. ${question.prompt}</b><div class="check-grid">${question.options.map((option) => `<label class="check-option"><input type="checkbox" name="${question.id}" value="${escapeHtml(option)}"> ${escapeHtml(option)}</label>`).join("")}</div></div>`;
+    return `<div class="question"><label for="question-${question.id}">${index + 1}. ${question.prompt}</label><select id="question-${question.id}" data-question="${question.id}" required><option value="">请选择</option>${question.options.map((option) => `<option>${escapeHtml(option)}</option>`).join("")}</select></div>`;
+  }).join("");
   modalContent.innerHTML = `<form id="solve-form" class="modal-inner"><div class="modal-head"><div><p class="eyebrow-dark">FINAL DEDUCTION</p><h2>提交最终推理</h2></div><button type="button" class="close-button" data-close aria-label="关闭">×</button></div>
     ${lesson}
     ${missing.length ? `<div class="solve-feedback">还有 ${missing.length} 个核心事实未确认。你仍可查看题目，但需要让证词、现场与设备记录互相印证后才能提交。</div>` : ""}
-    <div class="question"><label for="last-player">1. 最后一个正常玩球的是谁？</label><select id="last-player" required><option value="">请选择</option>${profiles.filter((p) => p.name !== "小扫").map((p) => `<option>${p.name}</option>`).join("")}</select></div>
-    <div class="question"><label for="first-taker">2. 小酒之后，谁第一次主动拿走球？</label><select id="first-taker" required><option value="">请选择</option>${profiles.filter((p) => p.name !== "小扫").map((p) => `<option>${p.name}</option>`).join("")}</select></div>
-    <div class="question"><b>3. 哪两只猫为掩盖秘密而提供了与记录冲突的证词？</b><div class="check-grid">${["小酒", "铁胆", "小流儿", "糖心", "松花"].map((name) => `<label class="check-option"><input type="checkbox" name="liars" value="${name}"> ${name}</label>`).join("")}</div></div>
-    <div class="question"><label for="carrier">4. 什么最终带走了球？</label><select id="carrier" required><option value="">请选择</option><option>铁胆</option><option>小流儿</option><option>小扫</option><option>暖气垫</option></select></div>
-    <div class="question"><label for="location">5. 球现在在哪里？</label><select id="location" required><option value="">请选择</option><option>厨房门边</option><option>蓝色纸箱</option><option>客厅沙发底</option><option>洗衣阳台的小扫后篮</option></select></div>
-    <div class="question"><b>6. 按时间排列事件</b><div id="event-order" class="event-order"></div></div>
+    ${questionHtml}
     <div id="solve-feedback"></div><button class="primary-button" type="submit" ${missing.length ? "disabled" : ""}>核对证据并结案</button></form>`;
   renderEventOrder();
   modal.showModal();
@@ -428,7 +471,9 @@ function renderEventOrder() {
 }
 
 function finishGame() {
-  modalContent.innerHTML = `<div class="modal-inner ending"><div class="ending-icon">🔔</div><p class="eyebrow-dark">CASE CLOSED</p><h2>球找到了！</h2><blockquote>“检测到可移动障碍物。”——小扫，在红球响起以后</blockquote><p>球安静地待在洗衣阳台的小扫后篮里。铁胆承认偷吃，小流儿公开宝物馆，小酒也坦白撞到了零食罐。</p><p>使用提示：${state.hintCount} 次　·　已读记录：${state.read.length} 条</p>${donationPanel()}<button class="primary-button" data-close data-open="END-01">阅读完整结案记录</button></div>`;
+  const presentation = caseData.presentation;
+  const unlockedNext = caseCatalog.find((item) => item.unlock.caseId === caseData.id);
+  modalContent.innerHTML = `<div class="modal-inner ending"><div class="ending-icon">${presentation.endingIcon}</div><p class="eyebrow-dark">CASE CLOSED</p><h2>${presentation.endingTitle}</h2><blockquote>${presentation.endingQuote}</blockquote><p>${presentation.endingBody}</p><p>使用提示：${state.hintCount} 次　·　已读记录：${state.read.length} 条</p>${unlockedNext ? `<p class="chapter-unlocked">新章节已解锁：CASE #${unlockedNext.number}《${unlockedNext.title}》</p>` : ""}${donationPanel()}<button class="primary-button" data-close data-open="END-01">阅读完整结案记录</button>${unlockedNext ? `<button class="secondary-button" data-case="${unlockedNext.id}">进入下一章</button>` : ""}</div>`;
 }
 
 function handleCommand(raw) {
@@ -486,6 +531,21 @@ document.addEventListener("click", (event) => {
     return;
   }
   if (target.dataset.view) setView(target.dataset.view);
+  if (target.dataset.case) {
+    const nextCase = casesById.get(target.dataset.case);
+    if (!nextCase || !isCaseUnlocked(nextCase, save.cases)) return;
+    bindCase(nextCase.id);
+    currentRecordId = null;
+    currentFilter = "全部";
+    solveOrder = scrambledEvents();
+    historyIndex = state.history.length;
+    persist();
+    if (modal.open) modal.close();
+    updateChrome();
+    setView("inbox");
+    toast(`已进入 CASE #${caseData.number}《${caseData.title}》。`);
+    return;
+  }
   if (target.dataset.open) {
     if (modal.open) modal.close();
     renderRecord(target.dataset.open);
@@ -495,25 +555,37 @@ document.addEventListener("click", (event) => {
   if (target.dataset.close !== undefined) modal.close();
   if (target.dataset.action === "home") setView("inbox");
   if (target.dataset.action === "hint") showHint();
+  if (target.dataset.action === "cases") showCases();
   if (target.dataset.action === "donate") showDonate();
   if (target.dataset.action === "tutorial") showTutorialCenter();
   if (target.dataset.action === "settings") showSettings();
   if (target.dataset.action === "solve") showSolve();
   if (target.dataset.action === "reset-tutorial") {
-    setState(resetTutorialProgress(state));
+    save.preferences.tutorial.seen = [];
+    persist();
     modal.close();
     setView("inbox");
     toast("教学进度已重置，将重新显示首次教学。");
   }
-  if (target.dataset.action === "reset") {
-    if (window.confirm("确定清除全部调查进度吗？此操作无法撤销。")) {
-      localStorage.removeItem("cat-help-save");
-      state = createInitialState();
+  if (target.dataset.action === "reset-case") {
+    if (window.confirm(`确定重新开始《${caseData.title}》吗？其他章节不会受影响。`)) {
+      save = resetCase(save, caseData.id, engine);
+      bindCase(caseData.id);
       persist();
       modal.close();
-      updateChrome();
       setView("inbox");
-      toast("存档已清除，调查重新开始。");
+      toast("当前章节已重新开始。");
+    }
+  }
+  if (target.dataset.action === "reset-all") {
+    if (window.confirm("确定清除全部章节进度吗？此操作无法撤销。")) {
+      localStorage.removeItem(SAVE_KEY);
+      save = loadSave(localStorage, engines);
+      bindCase("case-001");
+      persist();
+      modal.close();
+      setView("inbox");
+      toast("全部章节进度已清除。");
     }
   }
   if (target.dataset.move) {
@@ -545,29 +617,29 @@ document.addEventListener("keydown", (event) => {
 window.addEventListener("resize", positionTutorial);
 modal.addEventListener("click", (event) => { if (event.target === modal) modal.close(); });
 modal.addEventListener("change", (event) => {
-  if (event.target.id === "font-scale") { const next = structuredClone(state); next.settings.fontScale = Number(event.target.value); setState(next); }
-  if (event.target.id === "reduce-motion") { const next = structuredClone(state); next.settings.reducedMotion = event.target.checked; setState(next); }
-  if (event.target.id === "automatic-tutorial") { const next = structuredClone(state); next.tutorial.automatic = event.target.checked; setState(next); }
+  if (event.target.id === "font-scale") save.preferences.settings.fontScale = Number(event.target.value);
+  if (event.target.id === "reduce-motion") save.preferences.settings.reducedMotion = event.target.checked;
+  if (event.target.id === "automatic-tutorial") save.preferences.tutorial.automatic = event.target.checked;
+  persist();
+  updateChrome();
 });
 modal.addEventListener("submit", (event) => {
   if (event.target.id !== "solve-form") return;
   event.preventDefault();
-  const answer = {
-    lastPlayer: $("#last-player").value,
-    firstTaker: $("#first-taker").value,
-    liars: $$("input[name=liars]:checked").map((input) => input.value),
-    carrier: $("#carrier").value,
-    location: $("#location").value,
-    order: solveOrder.map((item) => item.id),
-  };
-  const result = validateSolution(answer, solution);
+  const answer = Object.fromEntries(solution.questions.map((question) => {
+    if (question.type === "single") return [question.id, $(`[data-question="${question.id}"]`).value];
+    if (question.type === "multiple") return [question.id, $$(`input[name="${question.id}"]:checked`).map((input) => input.value)];
+    return [question.id, solveOrder.map((item) => item.id)];
+  }));
+  const result = validateSolution(solution, answer);
   if (!result.correct) {
     $("#solve-feedback").innerHTML = `<div class="solve-feedback"><b>还有矛盾：</b><ul>${result.errors.map((error) => `<li>${escapeHtml(error)}</li>`).join("")}</ul></div>`;
     return;
   }
   const next = structuredClone(state);
   next.solved = true;
-  setState(recompute(next));
+  next.solvedAt = Date.now();
+  setState(engine.recompute(next));
   finishGame();
 });
 

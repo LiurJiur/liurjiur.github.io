@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <meta name="theme-color" content="#f4a261" />
-    <meta name="description" content="CAT HELP：玩具球失踪事件——一款温暖的档案检索推理游戏" />
-    <title>CAT HELP：玩具球失踪事件</title>
+    <meta name="description" content="CAT HELP：一款温暖的多章节档案检索推理游戏" />
+    <title>CAT HELP：猫宅调查档案</title>
     <link rel="icon" href="./src/ui/cat-favicon.svg" type="image/svg+xml" />
     <link rel="stylesheet" href="./src/ui/styles.css" />
   </head>
@@ -15,11 +15,12 @@
       <header class="topbar">
         <button class="brand" type="button" data-action="home" aria-label="返回调查首页">
           <span class="brand-mark" aria-hidden="true">🐾</span>
-          <span><strong>CAT HELP</strong><small>桂花宅 · 家庭终端</small></span>
+          <span><strong>CAT HELP</strong><small id="terminal-name">家庭调查终端</small></span>
         </button>
-        <div class="case-status"><span class="pulse"></span><span>失物调查进行中</span><b id="progress-text">0%</b></div>
+        <div class="case-status"><span class="pulse"></span><span id="case-status-copy">调查进行中</span><b id="progress-text">0%</b></div>
         <div class="top-actions">
           <button type="button" class="icon-button" data-action="hint">提示 <kbd>H</kbd></button>
+          <button type="button" class="icon-button" data-action="cases">章节</button>
           <button type="button" class="icon-button support-button" data-action="donate" aria-label="打开打赏入口">打赏 ♡</button>
           <button type="button" class="icon-button" data-action="tutorial" aria-label="打开教学中心">教学</button>
           <button type="button" class="icon-button" data-action="settings" aria-label="打开设置">设置</button>
@@ -36,8 +37,8 @@
         </nav>
         <div class="case-card">
           <div class="case-illustration" aria-hidden="true"><span class="cat-ears">▲　▲</span><span class="cat-face">● ᴥ ●</span></div>
-          <p class="eyebrow">CASE #001</p>
-          <h2>玩具球失踪事件</h2>
+          <p class="eyebrow" id="case-number">CASE #001</p>
+          <h2 id="case-title">玩具球失踪事件</h2>
           <div class="progress-track"><span id="progress-bar"></span></div>
           <p id="case-stats">已读 0 / 42 条记录</p>
           <button class="solve-button" type="button" data-action="solve">提交最终推理 <span>→</span></button>
