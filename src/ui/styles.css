@@ -98,6 +98,17 @@ kbd { border: 1px solid #cfc8bb; border-bottom-width: 2px; border-radius: 4px; p
 .concept-link.collected { border-bottom-style: solid; background: var(--green-soft); color: var(--green); }
 .concept-link.collected::after { content: " ✓"; font-size: .72em; }
 .concept-strip { padding: 16px; border-radius: 12px; background: #f4f1e9; }.concept-strip b { display: block; margin-bottom: 9px; font-size: .75rem; text-transform: uppercase; letter-spacing: .08em; }
+.puzzle-panel { margin: 0 0 24px; padding: clamp(18px, 4vw, 26px); border: 1px solid #e5ca98; border-radius: 15px; background: #fff8e8; text-align: center; }
+.puzzle-panel.solved { border-color: #b9d0c0; background: var(--green-soft); }
+.puzzle-panel h2 { margin: 4px 0 18px; font: 700 1.35rem Georgia, "Songti SC", serif; }.puzzle-panel > p { line-height: 1.7; }
+.puzzle-kicker { margin: 0; color: var(--orange-dark); font: 750 .68rem ui-monospace, monospace; letter-spacing: .12em; }.puzzle-panel.solved .puzzle-kicker { color: var(--green); }
+.puzzle-symbols { display: grid; grid-template-columns: repeat(4, minmax(58px, 76px)); justify-content: center; gap: 8px; margin-bottom: 16px; }
+.puzzle-symbols span { display: grid; gap: 3px; padding: 10px 6px; border: 1px solid #d8c9ae; border-radius: 10px; background: white; }.puzzle-symbols b { font-size: 1.45rem; }.puzzle-symbols small { color: var(--muted); font-size: .68rem; }
+.puzzle-note { width: min(100%, 470px); margin: 0 auto 18px; padding: 17px 18px 13px; border: 1px solid #dfca79; border-radius: 3px 12px 5px 10px; background: #fff2a9; box-shadow: 4px 5px 0 rgb(99 77 30 / 8%); text-align: left; transform: rotate(-.4deg); }.puzzle-note > b { display: block; margin-bottom: 10px; color: #725622; font-family: Georgia, "Songti SC", serif; }
+.puzzle-clues { display: grid; gap: 7px; margin: 0; padding-left: 1.4em; }.puzzle-clues li { padding: 5px 3px; border-bottom: 1px dashed rgb(114 86 34 / 25%); font-size: .85rem; line-height: 1.6; }
+.puzzle-order { display: flex; align-items: center; justify-content: center; flex-wrap: wrap; gap: 7px; }.puzzle-order span { width: 100%; color: var(--muted); font-size: .7rem; font-weight: 700; letter-spacing: .08em; }.puzzle-order b { display: grid; place-items: center; width: 38px; height: 38px; border-radius: 50%; background: var(--ink); font-size: 1.1rem; }.puzzle-order i { color: var(--muted); font-style: normal; }
+.puzzle-form { display: flex; justify-content: center; gap: 8px; margin-top: 16px; }.puzzle-form input { width: min(210px, 55%); border: 1px solid #cfc5b4; border-radius: 9px; padding: 10px 12px; background: white; text-align: center; letter-spacing: .2em; }
+.puzzle-feedback { min-height: 1.5em; margin: 10px 0 0; color: #853b22; font-size: .8rem; }
 
 .intel-panel { grid-area: intel; overflow: auto; padding: 25px 20px; background: #f4efe5; border-left: 1px solid var(--line); }
 .intel-panel section { padding-bottom: 23px; margin-bottom: 23px; border-bottom: 1px solid var(--line); }
@@ -159,6 +170,7 @@ kbd { border: 1px solid #cfc8bb; border-bottom-width: 2px; border-radius: 4px; p
   .workspace { padding: 22px 16px; }.hero { padding: 23px 19px; }.starter-grid { grid-template-columns: 1fr; }.starter-card { display: grid; grid-template-columns: 30px 1fr; column-gap: 10px; }.starter-card span { grid-row: 1 / 3; }.starter-card b { margin: 0; }
   .command-dock { padding: 8px 10px; grid-template-columns: auto 1fr auto; }.command-dock p { display: none; }.command-dock input { padding: 9px; }.command-dock > button { padding: 10px; }
   .page-head { align-items: start; flex-direction: column; }.map-wrap { aspect-ratio: .85; }.room small { display: none; }
+  .puzzle-form { align-items: stretch; flex-direction: column; }.puzzle-form input { width: 100%; }
   .toast-region { right: 12px; bottom: 128px; left: 12px; }.toast { max-width: none; }
   .donation-panel { margin-top: 22px; padding: 15px; }.donation-grid { grid-template-columns: 1fr; }.donation-card img { max-height: none; }
   .tutorial-card { right: 12px; bottom: 12px !important; left: 12px !important; top: auto !important; width: auto; transform: none !important; }.tutorial-list article { grid-template-columns: 24px minmax(0, 1fr); }.tutorial-list article > :last-child { grid-column: 2; justify-self: start; }

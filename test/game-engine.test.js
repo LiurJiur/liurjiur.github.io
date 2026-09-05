@@ -19,6 +19,7 @@ function completeReachability(engine) {
   for (let pass = 0; pass < 100; pass += 1) {
     for (const id of [...state.unlocked]) state = engine.openRecord(state, id).state;
     for (const concept of [...state.discovered]) state = engine.search(state, concept).state;
+    for (const item of engine.caseData.records.filter((record) => record.puzzle && state.read.includes(record.id))) state = engine.search(state, item.puzzle.answer).state;
     const next = `${state.unlocked.length}/${state.read.length}/${state.discovered.length}/${state.confirmedFacts.length}`;
     if (next === signature) break;
     signature = next;
@@ -33,6 +34,9 @@ test("every case exposes its five documented starting records", () => {
 test("aliases and punctuation resolve inside the active case only", () => {
   assert.equal(engines.get("case-001").resolveConcept("  扫地机！"), "小扫");
   assert.equal(engines.get("case-002").resolveConcept("六六"), "66");
+  assert.equal(engines.get("case-002").resolveConcept("轻拍三下"), "夜宵暗号");
+  assert.equal(engines.get("case-002").resolveConcept("三拍捷径"), "夜宵暗号");
+  assert.equal(engines.get("case-002").resolveConcept("五七六三"), "5763");
   assert.equal(engines.get("case-001").resolveConcept("六六"), null);
   assert.equal(normalize("蓝色 纸箱。"), "蓝色纸箱");
 });
@@ -49,6 +53,24 @@ test("collecting a concept unlocks records without counting as a search", () => 
   const searched = engine.search(collected.state, "66");
   assert.ok(searched.state.searched.includes("66"));
   assert.ok(searched.results.some((item) => item.id === "TEST-01"));
+});
+
+test("chapter two's symbol-code puzzle gates the night-snack record", () => {
+  const engine = engines.get("case-002");
+  const opened = engine.openRecord(engine.createInitialState(), "FILE-01").state;
+  const collected = engine.collectConcept(opened, "轻拍三下");
+  assert.equal(collected.concept, "夜宵暗号");
+  assert.ok(collected.state.unlocked.includes("LOCK-01"));
+  assert.ok(!collected.state.unlocked.includes("FILE-02"));
+
+  const wrong = engine.search(collected.state, "4758");
+  assert.ok(!wrong.state.unlocked.includes("FILE-02"));
+  const correct = engine.search(collected.state, "5763");
+  assert.ok(correct.state.unlocked.includes("FILE-02"));
+
+  const existingSave = structuredClone(opened);
+  existingSave.collected.push("4785");
+  assert.ok(engine.recompute(existingSave).unlocked.includes("FILE-02"));
 });
 
 test("all investigation records and required facts are reachable in every case", () => {

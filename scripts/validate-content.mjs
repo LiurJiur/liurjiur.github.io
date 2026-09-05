@@ -29,6 +29,10 @@ for (const caseData of caseCatalog) {
     if (question.type === "order" && question.options.some((id) => !eventIds.includes(id))) errors.push(`${prefix} Question ${question.id} references an unknown event.`);
   }
   for (const id of caseData.solution.requiredFacts) if (!factIds.includes(id)) errors.push(`${prefix} Solution references unknown fact: ${id}`);
+  for (const item of caseData.records.filter((record) => record.puzzle)) {
+    if (!item.puzzle.answer) errors.push(`${prefix} Puzzle ${item.id} has no answer.`);
+    for (const id of item.puzzle.unlocks ?? []) if (!recordIds.includes(id)) errors.push(`${prefix} Puzzle ${item.id} unlocks an unknown record: ${id}`);
+  }
 
   const engine = createCaseEngine(caseData);
   let state = engine.createInitialState();
@@ -36,6 +40,7 @@ for (const caseData of caseCatalog) {
   for (let pass = 0; pass < 100; pass += 1) {
     for (const id of [...state.unlocked]) state = engine.openRecord(state, id).state;
     for (const concept of [...state.discovered]) state = engine.search(state, concept).state;
+    for (const item of caseData.records.filter((record) => record.puzzle && state.read.includes(record.id))) state = engine.search(state, item.puzzle.answer).state;
     const signature = `${state.unlocked.length}/${state.read.length}/${state.discovered.length}/${state.confirmedFacts.length}`;
     if (signature === previous) break;
     previous = signature;

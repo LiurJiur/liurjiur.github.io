@@ -221,7 +221,20 @@ function formatBody(body) {
 }
 
 function recordIcon(type) {
-  return ({ "系统": "⌘", "委托": "✉", "群聊": "◌", "物品": "◆", "地图": "⌂", "证词": "❝", "传感器": "⌁", "设备日志": "▦", "设备档案": "▣", "现场记录": "◎", "已确认事实": "✓", "结案": "★" })[type] || "▤";
+  return ({ "系统": "⌘", "委托": "✉", "群聊": "◌", "物品": "◆", "地图": "⌂", "密码": "⌗", "证词": "❝", "传感器": "⌁", "设备日志": "▦", "设备档案": "▣", "现场记录": "◎", "已确认事实": "✓", "结案": "★" })[type] || "▤";
+}
+
+function renderPuzzle(item) {
+  if (!item.puzzle) return "";
+  const solved = item.puzzle.unlocks.every((id) => state.unlocked.includes(id));
+  if (solved) return `<section class="puzzle-panel solved"><p class="puzzle-kicker">PASSWORD ACCEPTED</p><h2>密码已经解开</h2><p>${escapeHtml(item.puzzle.success)}</p></section>`;
+  return `<section class="puzzle-panel"><p class="puzzle-kicker">PAW-CODE LOCK</p><h2>解开四位密码</h2>
+    <div class="puzzle-symbols" aria-label="密码图案">${item.puzzle.symbols.map((symbol) => `<span><b aria-hidden="true">${escapeHtml(symbol.icon)}</b><small>${escapeHtml(symbol.name)}</small></span>`).join("")}</div>
+    <div class="puzzle-note"><b>${escapeHtml(item.puzzle.noteTitle)}</b><ol class="puzzle-clues">${item.puzzle.clues.map((clue) => `<li>${escapeHtml(clue)}</li>`).join("")}</ol></div>
+    <p class="puzzle-order"><span>密码顺序</span>${item.puzzle.order.map((symbol) => `<b>${escapeHtml(symbol)}</b>`).join("<i>→</i>")}</p>
+    <p>${escapeHtml(item.puzzle.prompt)}</p>
+    <form class="puzzle-form" data-puzzle="${escapeHtml(item.id)}"><label class="sr-only" for="puzzle-answer-${escapeHtml(item.id)}">输入四位密码</label><input id="puzzle-answer-${escapeHtml(item.id)}" name="answer" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="输入四位密码" required><button class="primary-button" type="submit">解锁记录</button></form>
+    <p class="puzzle-feedback" role="status" aria-live="polite"></p></section>`;
 }
 
 function updateChrome() {
@@ -322,6 +335,7 @@ function renderRecord(id) {
     <button class="back-button" data-view="records">← 返回记录库</button>
     <header class="document-head"><div class="document-meta"><span class="type-pill">${recordIcon(item.type)} ${escapeHtml(item.type)}</span><span>${item.id}</span></div><h1>${escapeHtml(item.title)}</h1></header>
     <div class="document-body">${formatBody(item.body)}</div>
+    ${renderPuzzle(item)}
     ${endingSupport}
     <footer class="concept-strip"><b>本记录涉及的概念 · 首次点击收集并解锁，再次点击检索</b><div class="chip-cloud">${item.concepts.map((concept) => `<button class="chip${conceptStateClass(concept)}" data-search="${escapeHtml(concept)}">${escapeHtml(concept)}</button>`).join("")}</div></footer>
   </article>`;
@@ -597,6 +611,21 @@ document.addEventListener("click", (event) => {
 });
 
 $("#command-form").addEventListener("submit", (event) => { event.preventDefault(); handleCommand(commandInput.value); });
+workspace.addEventListener("submit", (event) => {
+  const form = event.target.closest("[data-puzzle]");
+  if (!form) return;
+  event.preventDefault();
+  const item = getRecord(form.dataset.puzzle);
+  const input = form.elements.answer;
+  if (!item?.puzzle || normalize(input.value) !== normalize(item.puzzle.answer)) {
+    form.parentElement.querySelector(".puzzle-feedback").textContent = "密码不对。先核对四个图案代表的数字，再检查输入顺序。";
+    input.select();
+    return;
+  }
+  const success = item.puzzle.success;
+  performSearch(item.puzzle.answer);
+  toast(success);
+});
 commandInput.addEventListener("keydown", (event) => {
   if (event.key === "ArrowUp" && state.history.length) { event.preventDefault(); historyIndex = Math.max(0, historyIndex - 1); commandInput.value = state.history[historyIndex] || ""; }
   if (event.key === "ArrowDown" && state.history.length) { event.preventDefault(); historyIndex = Math.min(state.history.length, historyIndex + 1); commandInput.value = state.history[historyIndex] || ""; }
