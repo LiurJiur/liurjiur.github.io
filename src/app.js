@@ -221,19 +221,43 @@ function formatBody(body) {
 }
 
 function recordIcon(type) {
-  return ({ "系统": "⌘", "委托": "✉", "群聊": "◌", "物品": "◆", "地图": "⌂", "密码": "⌗", "证词": "❝", "传感器": "⌁", "设备日志": "▦", "设备档案": "▣", "现场记录": "◎", "已确认事实": "✓", "结案": "★" })[type] || "▤";
+  return ({ "系统": "⌘", "委托": "✉", "群聊": "◌", "物品": "◆", "地图": "⌂", "密码": "⌗", "图形推理": "◇", "证词": "❝", "传感器": "⌁", "设备日志": "▦", "设备档案": "▣", "现场记录": "◎", "已确认事实": "✓", "结案": "★" })[type] || "▤";
 }
 
 function renderPuzzle(item) {
   if (!item.puzzle) return "";
-  const solved = item.puzzle.unlocks.every((id) => state.unlocked.includes(id));
-  if (solved) return `<section class="puzzle-panel solved"><p class="puzzle-kicker">PASSWORD ACCEPTED</p><h2>密码已经解开</h2><p>${escapeHtml(item.puzzle.success)}</p></section>`;
-  return `<section class="puzzle-panel"><p class="puzzle-kicker">PAW-CODE LOCK</p><h2>解开四位密码</h2>
-    <div class="puzzle-symbols" aria-label="密码图案">${item.puzzle.symbols.map((symbol) => `<span><b aria-hidden="true">${escapeHtml(symbol.icon)}</b><small>${escapeHtml(symbol.name)}</small></span>`).join("")}</div>
-    <div class="puzzle-note"><b>${escapeHtml(item.puzzle.noteTitle)}</b><ol class="puzzle-clues">${item.puzzle.clues.map((clue) => `<li>${escapeHtml(clue)}</li>`).join("")}</ol></div>
-    <p class="puzzle-order"><span>密码顺序</span>${item.puzzle.order.map((symbol) => `<b>${escapeHtml(symbol)}</b>`).join("<i>→</i>")}</p>
-    <p>${escapeHtml(item.puzzle.prompt)}</p>
-    <form class="puzzle-form" data-puzzle="${escapeHtml(item.id)}"><label class="sr-only" for="puzzle-answer-${escapeHtml(item.id)}">输入四位密码</label><input id="puzzle-answer-${escapeHtml(item.id)}" name="answer" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="输入四位密码" required><button class="primary-button" type="submit">解锁记录</button></form>
+  const puzzle = item.puzzle;
+  const solved = puzzle.unlocks.every((id) => state.unlocked.includes(id));
+  if (solved) return `<section class="puzzle-panel solved"><p class="puzzle-kicker">TRACE CONFIRMED</p><h2>图形推理已经完成</h2><p>${escapeHtml(puzzle.success)}</p></section>`;
+  const hints = puzzle.hints?.length ? `<details class="puzzle-hints"><summary>查看三级提示</summary><ol>${puzzle.hints.map((hint) => `<li>${escapeHtml(hint)}</li>`).join("")}</ol></details>` : "";
+  let challenge = "";
+  if (puzzle.type === "order") {
+    const byId = new Map(puzzle.items.map((entry) => [entry.id, entry]));
+    challenge = `<div class="trace-order" data-puzzle-order>${puzzle.initial.map((id, index) => {
+      const entry = byId.get(id);
+      const marks = entry.marks.map((mark) => `<i class="paw-mark ${mark === "前" ? "front" : "rear"}" aria-hidden="true">●</i>`).join("");
+      return `<article class="trace-card" data-puzzle-card="${escapeHtml(id)}"><b>卡片 ${escapeHtml(id)}</b><div class="footprint-strip texture-${entry.texture}" aria-hidden="true"><small>${entry.texture}</small>${marks}</div><p>${escapeHtml(entry.text)}</p><span class="move-buttons"><button type="button" data-puzzle-move="up" aria-label="向前移动卡片 ${escapeHtml(id)}" ${index === 0 ? "disabled" : ""}>↑</button><button type="button" data-puzzle-move="down" aria-label="向后移动卡片 ${escapeHtml(id)}" ${index === puzzle.initial.length - 1 ? "disabled" : ""}>↓</button></span></article>`;
+    }).join("")}</div>`;
+  } else if (puzzle.type === "choice") {
+    const routeNodes = ["P", "G", "T", "M", "W"];
+    challenge = `<p class="puzzle-legend">${escapeHtml(puzzle.legend)}</p><div class="route-grid">${puzzle.options.map((option) => {
+      const routeMap = `<span class="route-map" aria-hidden="true">${routeNodes.map((node) => {
+        const visits = option.path.flatMap((entry, visitIndex) => entry === node ? [visitIndex + 1] : []);
+        return `<i class="route-node node-${node.toLocaleLowerCase()}"><b>${node}</b>${visits.length ? `<small>${visits.join(",")}</small>` : ""}</i>`;
+      }).join("")}</span>`;
+      return `<label class="route-option"><input type="radio" name="answer" value="${escapeHtml(option.value)}" required><b>${escapeHtml(option.value)}</b>${routeMap}<span>${escapeHtml(option.text)}</span><small>${escapeHtml(option.detail)}</small></label>`;
+    }).join("")}</div>`;
+  } else if (puzzle.type === "code") {
+    const arrows = { "右": "→", "右上": "↗", "上": "↑", "左": "←" };
+    challenge = `<div class="direction-layout"><div class="number-grid" aria-label="九宫格数字">${puzzle.grid.flat().map((number) => `<b>${escapeHtml(number)}</b>`).join("")}</div><p><span>受力顺序</span>${puzzle.directions.map((direction) => `<b><i aria-hidden="true">${arrows[direction]}</i>${escapeHtml(direction)}</b>`).join("<em>→</em>")}</p></div>`;
+  } else {
+    challenge = `<div class="puzzle-symbols" aria-label="密码图案">${puzzle.symbols.map((symbol) => `<span><b aria-hidden="true">${escapeHtml(symbol.icon)}</b><small>${escapeHtml(symbol.name)}</small></span>`).join("")}</div>
+      <div class="puzzle-note"><b>${escapeHtml(puzzle.noteTitle)}</b><ol class="puzzle-clues">${puzzle.clues.map((clue) => `<li>${escapeHtml(clue)}</li>`).join("")}</ol></div>
+      <p class="puzzle-order"><span>密码顺序</span>${puzzle.order.map((symbol) => `<b>${escapeHtml(symbol)}</b>`).join("<i>→</i>")}</p>`;
+  }
+  const textInput = ["order", "choice"].includes(puzzle.type) ? "" : `<label class="sr-only" for="puzzle-answer-${escapeHtml(item.id)}">输入答案</label><input id="puzzle-answer-${escapeHtml(item.id)}" name="answer" inputmode="numeric" autocomplete="off" maxlength="4" pattern="[0-9]{4}" placeholder="输入四位密码" required>`;
+  return `<section class="puzzle-panel"><p class="puzzle-kicker">${escapeHtml(puzzle.kicker || "PAW-CODE LOCK")}</p><h2>${escapeHtml(puzzle.title || "解开四位密码")}</h2>
+    <form class="puzzle-form puzzle-form-${escapeHtml(puzzle.type || "code")}" data-puzzle="${escapeHtml(item.id)}">${challenge}<p>${escapeHtml(puzzle.prompt)}</p>${hints}<div class="puzzle-submit">${textInput}<button class="primary-button" type="submit">核对并解锁</button></div></form>
     <p class="puzzle-feedback" role="status" aria-live="polite"></p></section>`;
 }
 
@@ -544,6 +568,22 @@ document.addEventListener("click", (event) => {
     setTimeout(() => startTutorial(topic, true), 80);
     return;
   }
+  if (target.dataset.puzzleMove) {
+    const card = target.closest("[data-puzzle-card]");
+    const container = card?.parentElement;
+    if (!card || !container) return;
+    const cards = [...container.children];
+    const index = cards.indexOf(card);
+    const sibling = target.dataset.puzzleMove === "up" ? cards[index - 1] : cards[index + 1];
+    if (!sibling) return;
+    if (target.dataset.puzzleMove === "up") container.insertBefore(card, sibling);
+    else container.insertBefore(sibling, card);
+    [...container.children].forEach((entry, entryIndex, entries) => {
+      entry.querySelector('[data-puzzle-move="up"]').disabled = entryIndex === 0;
+      entry.querySelector('[data-puzzle-move="down"]').disabled = entryIndex === entries.length - 1;
+    });
+    return;
+  }
   if (target.dataset.view) setView(target.dataset.view);
   if (target.dataset.case) {
     const nextCase = casesById.get(target.dataset.case);
@@ -616,14 +656,16 @@ workspace.addEventListener("submit", (event) => {
   if (!form) return;
   event.preventDefault();
   const item = getRecord(form.dataset.puzzle);
-  const input = form.elements.answer;
-  if (!item?.puzzle || normalize(input.value) !== normalize(item.puzzle.answer)) {
-    form.parentElement.querySelector(".puzzle-feedback").textContent = "密码不对。先核对四个图案代表的数字，再检查输入顺序。";
-    input.select();
+  const puzzle = item?.puzzle;
+  let answer = form.elements.answer?.value ?? "";
+  if (puzzle?.type === "order") answer = [...form.querySelectorAll("[data-puzzle-card]")].map((card) => card.dataset.puzzleCard).join("");
+  if (!puzzle || normalize(answer) !== normalize(puzzle.answer)) {
+    form.parentElement.querySelector(".puzzle-feedback").textContent = puzzle?.error || (puzzle?.type ? "答案不对，请重新核对题面线索。" : "密码不对。先核对四个图案代表的数字，再检查输入顺序。");
+    if (form.elements.answer?.select) form.elements.answer.select();
     return;
   }
-  const success = item.puzzle.success;
-  performSearch(item.puzzle.answer);
+  const success = puzzle.success;
+  performSearch(puzzle.answer);
   toast(success);
 });
 commandInput.addEventListener("keydown", (event) => {

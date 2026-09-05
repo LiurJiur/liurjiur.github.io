@@ -1,7 +1,8 @@
 import { case001 } from "./cases/case-001/index.js";
 import { case002 } from "./cases/case-002/index.js";
+import { case003 } from "./cases/case-003/index.js";
 
-export const caseCatalog = [case001, case002];
+export const caseCatalog = [case001, case002, case003];
 export const casesById = new Map(caseCatalog.map((item) => [item.id, item]));
 
 export function isCaseUnlocked(caseData, cases) {

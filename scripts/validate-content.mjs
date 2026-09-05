@@ -32,6 +32,23 @@ for (const caseData of caseCatalog) {
   for (const item of caseData.records.filter((record) => record.puzzle)) {
     if (!item.puzzle.answer) errors.push(`${prefix} Puzzle ${item.id} has no answer.`);
     for (const id of item.puzzle.unlocks ?? []) if (!recordIds.includes(id)) errors.push(`${prefix} Puzzle ${item.id} unlocks an unknown record: ${id}`);
+    const type = item.puzzle.type ?? "symbol-code";
+    if (!["symbol-code", "order", "code", "choice"].includes(type)) errors.push(`${prefix} Puzzle ${item.id} has an unknown type: ${type}`);
+    if (caseData.id === "case-003" && item.puzzle.hints?.length !== 3) errors.push(`${prefix} Puzzle ${item.id} must have three hints.`);
+    if (type === "order") {
+      const itemIds = item.puzzle.items?.map((entry) => entry.id) ?? [];
+      if (new Set(itemIds).size !== itemIds.length || [...itemIds].sort().join("") !== [...String(item.puzzle.answer ?? "")].sort().join("")) errors.push(`${prefix} Puzzle ${item.id} answer must cover every order item once.`);
+      if ([...(item.puzzle.initial ?? [])].sort().join("") !== [...itemIds].sort().join("")) errors.push(`${prefix} Puzzle ${item.id} initial order must cover every item once.`);
+      if (item.puzzle.items?.some((entry) => !entry.text)) errors.push(`${prefix} Puzzle ${item.id} order item lacks a text equivalent.`);
+    }
+    if (type === "code") {
+      if (!/^\d{4}$/.test(item.puzzle.answer)) errors.push(`${prefix} Puzzle ${item.id} code must contain four digits.`);
+      if (caseData.id === "case-003" && item.puzzle.directions?.some((direction) => typeof direction !== "string")) errors.push(`${prefix} Puzzle ${item.id} direction lacks a text equivalent.`);
+    }
+    if (type === "choice") {
+      if (!item.puzzle.options?.some((option) => option.value === item.puzzle.answer)) errors.push(`${prefix} Puzzle ${item.id} answer is not a route option.`);
+      if (item.puzzle.options?.some((option) => !option.text || !option.detail)) errors.push(`${prefix} Puzzle ${item.id} route option lacks a text equivalent.`);
+    }
   }
 
   const engine = createCaseEngine(caseData);

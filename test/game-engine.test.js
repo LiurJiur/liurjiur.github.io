@@ -6,7 +6,7 @@ import { createSave, LEGACY_SAVE_KEY, loadSave, resetCase, SAVE_KEY } from "../s
 import { validateSolution } from "../src/engine/solution-engine.js";
 
 const engines = new Map(caseCatalog.map((item) => [item.id, createCaseEngine(item)]));
-const [case001, case002] = caseCatalog;
+const [case001, case002, case003] = caseCatalog;
 
 function memoryStorage(entries = {}) {
   const values = new Map(Object.entries(entries));
@@ -33,10 +33,13 @@ test("every case exposes its five documented starting records", () => {
 
 test("aliases and punctuation resolve inside the active case only", () => {
   assert.equal(engines.get("case-001").resolveConcept("  扫地机！"), "小扫");
+  assert.equal(engines.get("case-001").resolveConcept("小酒儿"), "小酒");
   assert.equal(engines.get("case-002").resolveConcept("六六"), "66");
   assert.equal(engines.get("case-002").resolveConcept("轻拍三下"), "夜宵暗号");
   assert.equal(engines.get("case-002").resolveConcept("三拍捷径"), "夜宵暗号");
   assert.equal(engines.get("case-002").resolveConcept("五七六三"), "5763");
+  assert.equal(engines.get("case-003").resolveConcept("巨大泥爪印"), "大爪印");
+  assert.equal(engines.get("case-003").resolveConcept("路线C"), "路线 C");
   assert.equal(engines.get("case-001").resolveConcept("六六"), null);
   assert.equal(normalize("蓝色 纸箱。"), "蓝色纸箱");
 });
@@ -94,6 +97,63 @@ test("chapter two unlocks only after chapter one is solved", () => {
   assert.equal(isCaseUnlocked(case002, save.cases), false);
   save.cases["case-001"].solved = true;
   assert.equal(isCaseUnlocked(case002, save.cases), true);
+});
+
+test("chapter three unlocks only after chapter two is solved", () => {
+  const save = createSave(engines);
+  save.cases["case-001"].solved = true;
+  assert.equal(isCaseUnlocked(case003, save.cases), false);
+  save.cases["case-002"].solved = true;
+  assert.equal(isCaseUnlocked(case003, save.cases), true);
+});
+
+test("chapter three uses exactly the five documented characters", () => {
+  assert.deepEqual(case003.profiles.map((item) => item.name).sort(), ["小流儿", "小酒儿", "屁屁", "臭臭", "香香"].sort());
+});
+
+test("chapter three puzzle answers unlock all three trace records", () => {
+  const engine = engines.get("case-003");
+  let state = engine.createInitialState();
+  for (const id of engine.startIds) state = engine.openRecord(state, id).state;
+
+  state = engine.search(state, "香香").state;
+  state = engine.openRecord(state, "TEST-02").state;
+  state = engine.search(state, "前后爪组合").state;
+  assert.ok(state.unlocked.includes("LOCK-01"));
+  assert.ok(!state.unlocked.includes("FILE-04"));
+  state = engine.search(state, "C-A-D-B").state;
+  assert.ok(state.unlocked.includes("FILE-04"));
+
+  state = engine.search(state, "白色纤维").state;
+  state = engine.openRecord(state, "FILE-05").state;
+  state = engine.search(state, "外门").state;
+  assert.ok(state.unlocked.includes("LOCK-02"));
+  assert.ok(!state.unlocked.includes("REC-05"));
+  state = engine.search(state, "6984").state;
+  assert.ok(state.unlocked.includes("REC-05"));
+
+  state = engine.search(state, "小流儿").state;
+  state = engine.openRecord(state, "TEST-01").state;
+  state = engine.search(state, "湿巾").state;
+  state = engine.openRecord(state, "REC-03").state;
+  state = engine.search(state, "臭臭").state;
+  state = engine.openRecord(state, "TEST-04").state;
+  state = engine.search(state, "吃饭要摸摸").state;
+  state = engine.openRecord(state, "REC-04").state;
+  state = engine.search(state, "地图路线").state;
+  assert.ok(state.unlocked.includes("LOCK-03"));
+  state = engine.search(state, "路线C").state;
+  assert.ok(state.unlocked.includes("FILE-09"));
+});
+
+test("chapter three route comparison also has a non-puzzle unlock path", () => {
+  const engine = engines.get("case-003");
+  const progressed = completeReachability(engine);
+  const withoutRouteAnswer = structuredClone(progressed);
+  withoutRouteAnswer.collected = withoutRouteAnswer.collected.filter((item) => item !== "路线 C");
+  withoutRouteAnswer.searched = withoutRouteAnswer.searched.filter((item) => item !== "路线 C");
+  withoutRouteAnswer.unlocked = withoutRouteAnswer.unlocked.filter((item) => item !== "FILE-09");
+  assert.ok(engine.recompute(withoutRouteAnswer).unlocked.includes("FILE-09"));
 });
 
 test("legacy saves migrate chapter progress and global preferences", () => {
